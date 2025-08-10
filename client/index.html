@@ -16,7 +16,7 @@
 
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
   <script>
-    const socket = io("REPLACE_WITH_SERVER_URL");
+    const socket = io("https://ping-v2-1.onrender.com");
     const localVideo = document.getElementById("localVideo");
     const remoteVideos = document.getElementById("remoteVideos");
     const peers = {};
@@ -28,7 +28,7 @@
     }
 
     document.getElementById("createRoom").onclick = async () => {
-      const res = await fetch("REPLACE_WITH_SERVER_URL/api/create-room");
+      const res = await fetch("https://ping-v2-1.onrender.com/api/create-room");
       const data = await res.json();
       document.getElementById("roomId").value = data.roomId;
       alert(`Room created: ${data.roomId}`);
