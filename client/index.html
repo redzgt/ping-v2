@@ -1,94 +1,333 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Video Call</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zoom-like Video Call App</title>
+  <style>
+    body {
+      margin: 0; 
+      background: #121212; 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #eee;
+      display: flex; 
+      flex-direction: column; 
+      height: 100vh;
+      user-select: none;
+    }
+    header {
+      background: #1f1f1f; 
+      padding: 1rem 2rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid #333;
+    }
+    main {
+      flex: 1;
+      padding: 1rem 2rem;
+      display: flex; 
+      flex-direction: column;
+      max-width: 900px;
+      margin: auto;
+      gap: 1rem;
+    }
+    .controls {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    input[type="text"] {
+      padding: 0.6rem 1rem;
+      border-radius: 4px;
+      border: none;
+      font-size: 1rem;
+      flex-grow: 1;
+      max-width: 300px;
+    }
+    button {
+      background: #4caf50;
+      border: none;
+      color: white;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.3s ease;
+      flex-shrink: 0;
+    }
+    button:hover:not(:disabled) {
+      background: #45a044;
+    }
+    button:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+    #videos {
+      flex: 1;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      overflow-y: auto;
+      padding: 1rem 0;
+    }
+    video {
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
+      max-width: 320px;
+      max-height: 240px;
+      width: 100%;
+      background: black;
+      object-fit: cover;
+    }
+    #localVideo {
+      border: 3px solid #4caf50;
+    }
+    footer {
+      background: #1f1f1f; 
+      padding: 0.8rem 2rem;
+      text-align: center;
+      font-size: 0.9rem;
+      color: #888;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
-  <h1>Video Call</h1>
-  <button id="createRoom">Create Room</button>
-  <input id="roomId" placeholder="Room ID">
-  <button id="joinRoom">Join Room</button>
-
-  <div>
-    <video id="localVideo" autoplay muted playsinline style="width:200px"></video>
-    <div id="remoteVideos"></div>
-  </div>
+  <header>🐒 Chimpy Video Chat</header>
+  <main>
+    <div class="controls">
+      <button id="createRoomBtn">Create Room</button>
+      <input type="text" id="roomIdInput" placeholder="Enter Room ID" autocomplete="off" />
+      <button id="joinRoomBtn">Join Room</button>
+    </div>
+    <div class="controls">
+      <button id="toggleVideoBtn" disabled>Turn Video Off</button>
+      <button id="toggleAudioBtn" disabled>Mute Mic</button>
+    </div>
+    <div id="videos">
+      <video id="localVideo" autoplay muted playsinline></video>
+      <!-- remote videos get appended here -->
+    </div>
+  </main>
+  <footer>
+    &copy; 2025 Pixel Banana Studios — Built with ❤️ using WebRTC & Socket.io
+  </footer>
 
   <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
   <script>
-    const socket = io("https://ping-v2-1.onrender.com");
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideos = document.getElementById("remoteVideos");
-    const peers = {};
+    // === CONFIG ===
+    const SERVER_URL = "https://your-server-url.onrender.com"; // <-- REPLACE THIS with your Render server URL
 
-    async function getMedia() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      localVideo.srcObject = stream;
-      return stream;
+    // === VARIABLES ===
+    const socket = io(SERVER_URL, { transports: ["websocket"] });
+    const localVideo = document.getElementById("localVideo");
+    const videosContainer = document.getElementById("videos");
+    const createRoomBtn = document.getElementById("createRoomBtn");
+    const joinRoomBtn = document.getElementById("joinRoomBtn");
+    const roomIdInput = document.getElementById("roomIdInput");
+    const toggleVideoBtn = document.getElementById("toggleVideoBtn");
+    const toggleAudioBtn = document.getElementById("toggleAudioBtn");
+
+    let localStream = null;
+    let peers = {}; // peerId -> RTCPeerConnection
+    let currentRoomId = null;
+    let videoEnabled = true;
+    let audioEnabled = true;
+
+    // === UTILS ===
+    function log(...args) { console.log("[LOG]", ...args); }
+
+    // Create a video element for remote streams
+    function createRemoteVideo(peerId) {
+      const video = document.createElement("video");
+      video.id = `remoteVideo_${peerId}`;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.style.border = "3px solid #2196f3";
+      videosContainer.appendChild(video);
+      return video;
+    }
+    function removeRemoteVideo(peerId) {
+      const video = document.getElementById(`remoteVideo_${peerId}`);
+      if(video) video.remove();
     }
 
-    document.getElementById("createRoom").onclick = async () => {
-      const res = await fetch("https://ping-v2-1.onrender.com/api/create-room");
-      const data = await res.json();
-      document.getElementById("roomId").value = data.roomId;
-      alert(`Room created: ${data.roomId}`);
-    };
+    // === GET USER MEDIA ===
+    async function getLocalStream() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = stream;
+        localVideo.srcObject = stream;
+        toggleVideoBtn.disabled = false;
+        toggleAudioBtn.disabled = false;
+        return stream;
+      } catch (err) {
+        alert("Could not access camera and microphone. Please allow permissions.");
+        throw err;
+      }
+    }
 
-    document.getElementById("joinRoom").onclick = async () => {
-      const roomId = document.getElementById("roomId").value.trim();
-      const stream = await getMedia();
-      socket.emit("join-room", { roomId }, ({ error, peers: others }) => {
-        if (error) return alert(error);
-        others.forEach(peerId => callPeer(peerId, stream));
-      });
-    };
+    // === SIGNALING ===
+    socket.on("connect", () => log("Connected to signaling server"));
 
-    socket.on("peer-joined", ({ peerId }) => {
-      getMedia().then(stream => callPeer(peerId, stream));
+    socket.on("disconnect", () => log("Disconnected from signaling server"));
+
+    socket.on("room-created", ({ roomId }) => {
+      roomIdInput.value = roomId;
+      alert(`Room created! Share this ID to your friends: ${roomId}`);
+      currentRoomId = roomId;
+    });
+
+    socket.on("room-joined", ({ peers: existingPeers }) => {
+      log("Joined room with peers:", existingPeers);
+      existingPeers.forEach(peerId => initiateCall(peerId));
     });
 
     socket.on("signal", async ({ from, data }) => {
-      let pc = peers[from];
-      if (!pc) {
-        pc = createPeer(from);
-      }
-      if (data.type === "offer") {
-        await pc.setRemoteDescription(new RTCSessionDescription(data));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit("signal", { to: from, data: answer });
-      } else if (data.type === "answer") {
-        await pc.setRemoteDescription(new RTCSessionDescription(data));
-      } else if (data.candidate) {
-        await pc.addIceCandidate(data.candidate);
+      if (!peers[from]) {
+        await receiveCall(from, data);
+      } else {
+        await handleSignal(from, data);
       }
     });
 
-    function createPeer(id) {
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-      peers[id] = pc;
-      pc.onicecandidate = e => {
-        if (e.candidate) {
-          socket.emit("signal", { to: id, data: { candidate: e.candidate } });
+    socket.on("peer-left", ({ peerId }) => {
+      log(`Peer left: ${peerId}`);
+      if (peers[peerId]) {
+        peers[peerId].close();
+        delete peers[peerId];
+        removeRemoteVideo(peerId);
+      }
+    });
+
+    // === WEBRTC ===
+
+    async function initiateCall(peerId) {
+      log("Initiating call to", peerId);
+      const pc = createPeerConnection(peerId);
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("signal", { to: peerId, data: offer });
+    }
+
+    async function receiveCall(peerId, data) {
+      log("Receiving call from", peerId);
+      const pc = createPeerConnection(peerId);
+      await pc.setRemoteDescription(new RTCSessionDescription(data));
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("signal", { to: peerId, data: answer });
+    }
+
+    async function handleSignal(peerId, data) {
+      const pc = peers[peerId];
+      if (!pc) return;
+
+      if (data.candidate) {
+        await pc.addIceCandidate(data.candidate);
+      } else if (data.type === "answer" || data.type === "offer") {
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
+      }
+    }
+
+    function createPeerConnection(peerId) {
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          // You can add TURN servers here if you want
+        ]
+      });
+      peers[peerId] = pc;
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("signal", { to: peerId, data: { candidate: event.candidate } });
         }
       };
-      pc.ontrack = e => {
-        const video = document.createElement("video");
-        video.autoplay = true;
-        video.playsInline = true;
-        video.srcObject = e.streams[0];
-        remoteVideos.appendChild(video);
+
+      pc.ontrack = (event) => {
+        let remoteVideo = document.getElementById(`remoteVideo_${peerId}`);
+        if (!remoteVideo) {
+          remoteVideo = createRemoteVideo(peerId);
+        }
+        remoteVideo.srcObject = event.streams[0];
       };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+          pc.close();
+          delete peers[peerId];
+          removeRemoteVideo(peerId);
+        }
+      };
+
       return pc;
     }
 
-    async function callPeer(id, stream) {
-      const pc = createPeer(id);
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("signal", { to: id, data: offer });
+    // === UI EVENTS ===
+    createRoomBtn.onclick = async () => {
+      try {
+        const res = await fetch(`${SERVER_URL}/api/create-room`);
+        const data = await res.json();
+        roomIdInput.value = data.roomId;
+        currentRoomId = data.roomId;
+        alert(`Room created! Share this ID: ${data.roomId}`);
+        await joinRoom();
+      } catch (err) {
+        alert("Failed to create room");
+        console.error(err);
+      }
+    };
+
+    joinRoomBtn.onclick = joinRoom;
+
+    async function joinRoom() {
+      if (!roomIdInput.value.trim()) {
+        alert("Please enter a Room ID");
+        return;
+      }
+      if (!localStream) {
+        await getLocalStream();
+      }
+      currentRoomId = roomIdInput.value.trim();
+      socket.emit("join-room", { roomId: currentRoomId }, (response) => {
+        if (response?.error) {
+          alert(response.error);
+          return;
+        }
+        log("Join-room response:", response);
+      });
     }
+
+    toggleVideoBtn.onclick = () => {
+      if (!localStream) return;
+      videoEnabled = !videoEnabled;
+      localStream.getVideoTracks().forEach(track => track.enabled = videoEnabled);
+      toggleVideoBtn.textContent = videoEnabled ? "Turn Video Off" : "Turn Video On";
+    };
+
+    toggleAudioBtn.onclick = () => {
+      if (!localStream) return;
+      audioEnabled = !audioEnabled;
+      localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
+      toggleAudioBtn.textContent = audioEnabled ? "Mute Mic" : "Unmute Mic";
+    };
+
+    // Automatically get media on load so user sees their video
+    (async () => {
+      try {
+        await getLocalStream();
+      } catch {}
+    })();
+
   </script>
 </body>
 </html>
