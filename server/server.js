@@ -8,12 +8,11 @@ const app = express();
 
 // Enable CORS for your client
 app.use(cors({
-  origin: "https://ping-v2.onrender.com", // change if your client URL is different
+  origin: "https://ping-v2.onrender.com", // your client URL
   methods: ["GET", "POST"],
   credentials: true
 }));
 
-// Create HTTP server for socket.io
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -22,27 +21,46 @@ const io = new Server(server, {
   }
 });
 
-// API endpoint to create a room
 app.get("/api/create-room", (req, res) => {
   const roomId = nanoid(10);
   res.json({ roomId });
 });
 
-// Socket.io events
 io.on("connection", (socket) => {
-  console.log("A user connected");
+  console.log("A user connected: " + socket.id);
 
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
-    console.log(`User joined room ${roomId}`);
+    console.log(`User ${socket.id} joined room ${roomId}`);
+
+    // Notify other peers in the room
+    socket.to(roomId).emit("peer-joined", { peerId: socket.id });
+
+    // Send existing peers in the room to the joining client
+    const clients = Array.from(io.sockets.adapter.rooms.get(roomId) || []);
+    const otherPeers = clients.filter(id => id !== socket.id);
+    socket.emit("room-joined", { peers: otherPeers });
+  });
+
+  // Relay signaling data
+  socket.on("signal", ({ to, data }) => {
+    io.to(to).emit("signal", { from: socket.id, data });
+  });
+
+  socket.on("disconnecting", () => {
+    // Inform others that this peer is leaving
+    socket.rooms.forEach(roomId => {
+      if (roomId !== socket.id) {
+        socket.to(roomId).emit("peer-left", { peerId: socket.id });
+      }
+    });
   });
 
   socket.on("disconnect", () => {
-    console.log("A user disconnected");
+    console.log("A user disconnected: " + socket.id);
   });
 });
 
-// Start the server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
