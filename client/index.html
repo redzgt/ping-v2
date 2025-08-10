@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Zoom-like Video Call App</title>
+  <title>Ping</title>
   <style>
     body {
       margin: 0; 
@@ -99,7 +99,7 @@
   </style>
 </head>
 <body>
-  <header>🐒 Chimpy Video Chat</header>
+  <header>Ping: video call application</header>
   <main>
     <div class="controls">
       <button id="createRoomBtn">Create Room</button>
@@ -160,18 +160,19 @@
 
     // === GET USER MEDIA ===
     async function getLocalStream() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localStream = stream;
-        localVideo.srcObject = stream;
-        toggleVideoBtn.disabled = false;
-        toggleAudioBtn.disabled = false;
-        return stream;
-      } catch (err) {
-        alert("Could not access camera and microphone. Please allow permissions.");
-        throw err;
-      }
-    }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localStream = stream;
+    localVideo.srcObject = stream;
+    toggleVideoBtn.disabled = false;
+    toggleAudioBtn.disabled = false;
+    return stream;
+  } catch (err) {
+    console.error("getUserMedia error:", err);
+    alert(`Could not access camera and microphone: ${err.message || err}`);
+    throw err;
+  }
+}
 
     // === SIGNALING ===
     socket.on("connect", () => log("Connected to signaling server"));
