@@ -88,6 +88,13 @@
   #localVideo {
     border: 3px solid #4caf50;
   }
+  #status {
+    text-align: center;
+    margin-bottom: 10px;
+    color: #4caf50;
+    font-weight: 600;
+    min-height: 1.2em;
+  }
   footer {
     background: #1f1f1f; 
     padding: 0.8rem 2rem;
@@ -101,6 +108,7 @@
 <body>
 <header>📶 Ping Video Chat</header>
 <main>
+  <div id="status"></div>
   <div class="controls">
     <button id="createRoomBtn">Create Room</button>
     <input type="text" id="roomIdInput" placeholder="Enter Room ID" autocomplete="off" />
@@ -121,7 +129,7 @@
 
 <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
 <script>
-  const SERVER_URL = "https://ping-v2-1.onrender.com"; // <-- REPLACE with your Render server URL
+  const SERVER_URL = "https://ping-v2-1.onrender.com"; // <-- Your Render server URL
 
   const socket = io(SERVER_URL, { transports: ["websocket"] });
   const localVideo = document.getElementById("localVideo");
@@ -131,6 +139,7 @@
   const roomIdInput = document.getElementById("roomIdInput");
   const toggleVideoBtn = document.getElementById("toggleVideoBtn");
   const toggleAudioBtn = document.getElementById("toggleAudioBtn");
+  const statusDiv = document.getElementById("status");
 
   let localStream = null;
   let peers = {}; // peerId -> RTCPeerConnection
@@ -139,6 +148,10 @@
   let audioEnabled = true;
 
   function log(...args) { console.log("[LOG]", ...args); }
+  function setStatus(message, isError = false) {
+    statusDiv.textContent = message;
+    statusDiv.style.color = isError ? "red" : "#4caf50";
+  }
 
   function createRemoteVideo(peerId) {
     const video = document.createElement("video");
@@ -161,24 +174,30 @@
       localVideo.srcObject = stream;
       toggleVideoBtn.disabled = false;
       toggleAudioBtn.disabled = false;
+      setStatus("Camera & mic ready!");
       return stream;
     } catch (err) {
       console.error("getUserMedia error:", err);
-      alert(`Could not access camera and microphone: ${err.message || err}`);
+      setStatus(`Could not access camera and microphone: ${err.message || err}`, true);
       throw err;
     }
   }
 
   socket.on("connect", () => log("Connected to signaling server"));
-  socket.on("disconnect", () => log("Disconnected from signaling server"));
+  socket.on("disconnect", () => {
+    log("Disconnected from signaling server");
+    setStatus("Disconnected from signaling server", true);
+  });
 
   socket.on("room-joined", ({ peers: existingPeers }) => {
     log("Joined room with peers:", existingPeers);
+    setStatus(`Joined room with ${existingPeers.length} peer(s)`);
     existingPeers.forEach(peerId => initiateCall(peerId));
   });
 
   socket.on("peer-joined", ({ peerId }) => {
     log("Peer joined:", peerId);
+    setStatus(`Peer joined: ${peerId}`);
     initiateCall(peerId);
   });
 
@@ -192,6 +211,7 @@
 
   socket.on("peer-left", ({ peerId }) => {
     log(`Peer left: ${peerId}`);
+    setStatus(`Peer left: ${peerId}`);
     if (peers[peerId]) {
       peers[peerId].close();
       delete peers[peerId];
@@ -223,9 +243,19 @@
     if (!pc) return;
 
     if (data.candidate) {
-      await pc.addIceCandidate(data.candidate);
+      try {
+        await pc.addIceCandidate(data.candidate);
+        log(`Added ICE candidate for ${peerId}`);
+      } catch (e) {
+        console.warn(`Failed to add ICE candidate for ${peerId}`, e);
+      }
     } else if (data.type === "answer" || data.type === "offer") {
-      await pc.setRemoteDescription(new RTCSessionDescription(data));
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data));
+        log(`Set remote description for ${peerId}`);
+      } catch (e) {
+        console.warn(`Failed to set remote description for ${peerId}`, e);
+      }
     }
   }
 
@@ -244,6 +274,7 @@
     };
 
     pc.ontrack = (event) => {
+      log(`Received remote track from ${peerId}`, event.streams[0]);
       let remoteVideo = document.getElementById(`remoteVideo_${peerId}`);
       if (!remoteVideo) {
         remoteVideo = createRemoteVideo(peerId);
@@ -252,10 +283,12 @@
     };
 
     pc.onconnectionstatechange = () => {
+      log(`Connection state with ${peerId}:`, pc.connectionState);
       if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
         pc.close();
         delete peers[peerId];
         removeRemoteVideo(peerId);
+        setStatus(`Peer ${peerId} disconnected`, true);
       }
     };
 
@@ -265,22 +298,23 @@
   createRoomBtn.onclick = async () => {
     try {
       const res = await fetch(`${SERVER_URL}/api/create-room`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       roomIdInput.value = data.roomId;
       currentRoomId = data.roomId;
-      alert(`Room created! Share this ID: ${data.roomId}`);
+      setStatus(`Room created! Share this ID: ${data.roomId}`);
 
       await getLocalStream();
-      joinRoom();
+      socket.emit("join-room", currentRoomId);
     } catch (err) {
-      alert("Failed to create room");
       console.error(err);
+      setStatus("Failed to create room", true);
     }
   };
 
   joinRoomBtn.onclick = async () => {
     if (!roomIdInput.value.trim()) {
-      alert("Please enter a Room ID");
+      setStatus("Please enter a Room ID", true);
       return;
     }
     if (!localStream) {
@@ -288,6 +322,7 @@
     }
     currentRoomId = roomIdInput.value.trim();
     socket.emit("join-room", currentRoomId);
+    setStatus(`Joining room ${currentRoomId}...`);
   };
 
   toggleVideoBtn.onclick = () => {
