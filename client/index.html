@@ -158,6 +158,7 @@
     video.id = `remoteVideo_${peerId}`;
     video.autoplay = true;
     video.playsInline = true;
+    // DO NOT mute remote video, so audio can be heard
     video.style.border = "3px solid #2196f3";
     videosContainer.appendChild(video);
     return video;
@@ -290,6 +291,7 @@
         remoteVideo = createRemoteVideo(peerId);
       }
       remoteVideo.srcObject = event.streams[0];
+      remoteVideo.play().catch(e => console.warn("Error playing remote video:", e));
     };
 
     pc.onconnectionstatechange = () => {
