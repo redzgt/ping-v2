@@ -1,3 +1,11 @@
+const cors = require("cors");
+
+app.use(cors({
+  origin: "https://ping-v2.onrender.com", // client URL
+  methods: ["GET", "POST"],
+  credentials: true
+}));
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
