@@ -95,6 +95,10 @@
     font-weight: 600;
     min-height: 1.2em;
   }
+  #remoteUnmuteContainer {
+    text-align: center;
+    margin-top: 10px;
+  }
   footer {
     background: #1f1f1f; 
     padding: 0.8rem 2rem;
@@ -122,6 +126,7 @@
     <video id="localVideo" autoplay muted playsinline></video>
     <!-- remote videos appended here -->
   </div>
+  <div id="remoteUnmuteContainer"></div>
 </main>
 <footer>
   &copy; 2025 redz — Built with ❤️ using WebRTC & Socket.io
@@ -140,6 +145,7 @@
   const toggleVideoBtn = document.getElementById("toggleVideoBtn");
   const toggleAudioBtn = document.getElementById("toggleAudioBtn");
   const statusDiv = document.getElementById("status");
+  const remoteUnmuteContainer = document.getElementById("remoteUnmuteContainer");
 
   let localStream = null;
   let peers = {}; // peerId -> RTCPeerConnection
@@ -158,7 +164,7 @@
     video.id = `remoteVideo_${peerId}`;
     video.autoplay = true;
     video.playsInline = true;
-    // DO NOT mute remote video, so audio can be heard
+    video.muted = false;  // Important: DO NOT mute remote video
     video.style.border = "3px solid #2196f3";
     videosContainer.appendChild(video);
     return video;
@@ -181,6 +187,29 @@
       console.error("getUserMedia error:", err);
       setStatus(`Could not access camera and microphone: ${err.message || err}`, true);
       throw err;
+    }
+  }
+
+  function createUnmuteButton() {
+    if (remoteUnmuteContainer.children.length === 0) {
+      const btn = document.createElement("button");
+      btn.textContent = "Unmute Remote Audio";
+      btn.style.background = "#2196f3";
+      btn.style.color = "white";
+      btn.style.border = "none";
+      btn.style.padding = "0.5rem 1rem";
+      btn.style.borderRadius = "5px";
+      btn.style.cursor = "pointer";
+      btn.onclick = () => {
+        document.querySelectorAll("video[id^='remoteVideo_']").forEach(v => {
+          v.muted = false;
+          v.volume = 1.0;
+          v.play();
+        });
+        remoteUnmuteContainer.innerHTML = "";
+        setStatus("Remote audio unmuted!");
+      };
+      remoteUnmuteContainer.appendChild(btn);
     }
   }
 
@@ -291,7 +320,16 @@
         remoteVideo = createRemoteVideo(peerId);
       }
       remoteVideo.srcObject = event.streams[0];
-      remoteVideo.play().catch(e => console.warn("Error playing remote video:", e));
+      // Try to play remote video, handle autoplay block by showing unmute button
+      remoteVideo.muted = false;
+      remoteVideo.volume = 1.0;
+      const playPromise = remoteVideo.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          setStatus("Click 'Unmute Remote Audio' to hear others");
+          createUnmuteButton();
+        });
+      }
     };
 
     pc.onconnectionstatechange = () => {
