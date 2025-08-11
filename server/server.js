@@ -5,19 +5,13 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
-
-// Enable CORS for your client
-app.use(cors({
-  origin: "https://ping-v2.onrender.com", // your client URL
-  methods: ["GET", "POST"],
-  credentials: true
-}));
+app.use(cors());
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "https://ping-v2.onrender.com",
-    methods: ["GET", "POST"]
+    origin: "*",  // Allow all origins for testing, tighten later
+    methods: ["GET", "POST"],
   }
 });
 
@@ -26,38 +20,43 @@ app.get("/api/create-room", (req, res) => {
   res.json({ roomId });
 });
 
+const rooms = {}; // roomId -> Set of socketIds
+
 io.on("connection", (socket) => {
-  console.log("A user connected: " + socket.id);
+  console.log("User connected:", socket.id);
 
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
     console.log(`User ${socket.id} joined room ${roomId}`);
 
-    // Notify other peers in the room
-    socket.to(roomId).emit("peer-joined", { peerId: socket.id });
+    if (!rooms[roomId]) rooms[roomId] = new Set();
+    rooms[roomId].add(socket.id);
 
-    // Send existing peers in the room to the joining client
-    const clients = Array.from(io.sockets.adapter.rooms.get(roomId) || []);
-    const otherPeers = clients.filter(id => id !== socket.id);
-    socket.emit("room-joined", { peers: otherPeers });
+    // Send to joining client the list of other clients in room
+    const otherClients = Array.from(rooms[roomId]).filter(id => id !== socket.id);
+    socket.emit("room-joined", { peers: otherClients });
+
+    // Notify others that a new peer joined
+    socket.to(roomId).emit("peer-joined", { peerId: socket.id });
   });
 
-  // Relay signaling data
   socket.on("signal", ({ to, data }) => {
+    // Relay signaling data to the intended peer
     io.to(to).emit("signal", { from: socket.id, data });
   });
 
   socket.on("disconnecting", () => {
-    // Inform others that this peer is leaving
-    socket.rooms.forEach(roomId => {
-      if (roomId !== socket.id) {
+    const roomsJoined = socket.rooms;
+    for (const roomId of roomsJoined) {
+      if (rooms[roomId]) {
+        rooms[roomId].delete(socket.id);
         socket.to(roomId).emit("peer-left", { peerId: socket.id });
+        if (rooms[roomId].size === 0) {
+          delete rooms[roomId];
+        }
       }
-    });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("A user disconnected: " + socket.id);
+    }
+    console.log("User disconnected:", socket.id);
   });
 });
 
