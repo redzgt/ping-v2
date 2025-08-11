@@ -6,17 +6,17 @@
 <title>Ping Video Chat</title>
 <style>
   body {
-    margin: 0; 
-    background: #121212; 
+    margin: 0;
+    background: #121212;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #eee;
-    display: flex; 
-    flex-direction: column; 
+    display: flex;
+    flex-direction: column;
     height: 100vh;
     user-select: none;
   }
   header {
-    background: #1f1f1f; 
+    background: #1f1f1f;
     padding: 1rem 2rem;
     font-size: 1.5rem;
     font-weight: 700;
@@ -27,7 +27,7 @@
   main {
     flex: 1;
     padding: 1rem 2rem;
-    display: flex; 
+    display: flex;
     flex-direction: column;
     max-width: 900px;
     margin: auto;
@@ -100,7 +100,7 @@
     margin-top: 10px;
   }
   footer {
-    background: #1f1f1f; 
+    background: #1f1f1f;
     padding: 0.8rem 2rem;
     text-align: center;
     font-size: 0.9rem;
@@ -134,7 +134,7 @@
 
 <script src="https://cdn.socket.io/4.7.1/socket.io.min.js"></script>
 <script>
-  const SERVER_URL = "https://ping-v2-1.onrender.com"; // <-- Replace with your server URL
+  const SERVER_URL = "https://ping-v2-1.onrender.com"; // Replace with your deployed server URL
 
   const socket = io(SERVER_URL, { transports: ["websocket"] });
   const localVideo = document.getElementById("localVideo");
@@ -164,7 +164,7 @@
     video.id = `remoteVideo_${peerId}`;
     video.autoplay = true;
     video.playsInline = true;
-    video.muted = false;  // Important: DO NOT mute remote video
+    video.muted = false;
     video.style.border = "3px solid #2196f3";
     videosContainer.appendChild(video);
     return video;
@@ -320,7 +320,6 @@
         remoteVideo = createRemoteVideo(peerId);
       }
       remoteVideo.srcObject = event.streams[0];
-      // Try to play remote video, handle autoplay block by showing unmute button
       remoteVideo.muted = false;
       remoteVideo.volume = 1.0;
       const playPromise = remoteVideo.play();
